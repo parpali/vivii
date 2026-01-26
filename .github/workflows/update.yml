@@ -1,9 +1,9 @@
-name: OHA Browser Force Update
+name: OHA Force Text Update
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Alle 6 Stunden automatisch
-  workflow_dispatch: # Button für manuellen Start
+    - cron: '0 */6 * * *'
+  workflow_dispatch: 
 
 jobs:
   download_oha:
@@ -17,12 +17,12 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install Playwright Browser
+      - name: Install Playwright
         run: |
           npm install playwright
           npx playwright install chromium --with-deps
 
-      - name: Download JSON via Playwright
+      - name: Extract JSON via Browser Text
         run: |
           node -e "
           const { chromium } = require('playwright');
@@ -30,25 +30,31 @@ jobs:
           (async () => {
             const browser = await chromium.launch();
             const page = await browser.newPage();
-            console.log('Navigiere zu OHA...');
             
-            // Der Browser wartet, bis die gesamte Datei im Netzwerk geladen ist
-            const response = await page.goto('http://oha.to/mediaurl-catalog.json', { 
+            console.log('Navigiere und warte auf Daten...');
+            
+            // Wir gehen auf die Seite
+            await page.goto('http://oha.to/mediaurl-catalog.json', { 
               waitUntil: 'networkidle', 
               timeout: 180000 
             });
+
+            // Wir geben dem Browser Zeit, den riesigen Text zu laden (10 Sek)
+            await page.waitForTimeout(10000);
+
+            // Wir holen uns den Textinhalt direkt aus dem Body-Tag
+            // Das umgeht den Download-Stream-Schutz
+            const content = await page.evaluate(() => document.body.innerText);
             
-            const buffer = await response.body();
-            fs.writeFileSync('cache_oha.json', buffer);
-            
-            console.log('Download beendet. Dateigröße: ' + buffer.length + ' Bytes');
-            await browser.close();
-            
-            // Sicherheitscheck: Wenn kleiner 1MB, Fehlermeldung
-            if (buffer.length < 1000000) {
-              console.error('FEHLER: Nur Bruchstück geladen!');
+            if (content.length < 1000000) {
+              console.error('FEHLER: Textinhalt zu kurz (' + content.length + ')');
               process.exit(1);
             }
+
+            fs.writeFileSync('cache_oha.json', content);
+            console.log('Erfolgreich gespeichert! Größe: ' + content.length);
+            
+            await browser.close();
           })();
           "
 
@@ -57,5 +63,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add cache_oha.json
-          git commit -m "Update OHA Data (Browser Method)" || exit 0
+          git commit -m "Update OHA Data (Body Text Method)" || exit 0
           git push
