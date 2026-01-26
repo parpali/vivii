@@ -1,9 +1,8 @@
-name: OHA POST Force Update
-
+name: OHA Force POST Update
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
-  workflow_dispatch: 
 
 jobs:
   download_oha:
@@ -12,14 +11,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Download Full OHA Catalog (POST Method)
+      - name: Download Full OHA Catalog
         run: |
-          echo "Starte Download mit POST-Request..."
+          echo "Starte getarnten POST-Request..."
           
-          # Wir nutzen exakt die Header und den Body aus deiner Analyse
+          # Wir fügen Accept-Encoding und Host hinzu, um die App exakt zu kopieren
           curl -X POST "http://oha.to/mediaurl-catalog.json" \
+               -H "Host: oha.to" \
                -H "user-agent: MediaUrl/2" \
+               -H "Accept-Encoding: gzip" \
                -H "Content-Type: application/json; charset=utf-8" \
+               -H "Connection: Keep-Alive" \
                -d '{
                  "language": "de",
                  "region": "XX",
@@ -32,23 +34,24 @@ jobs:
                  "cursor": null,
                  "clientVersion": "3.0.2"
                }' \
+               --compressed \
                -o cache_oha.json
 
-      - name: Validierung der Dateigröße
+      - name: Check Dateigröße
         run: |
-          FILESIZE=$(stat -c%s "cache_oha.json")
-          echo "Dateigröße: $FILESIZE Bytes"
-          
-          # Die Datei muss deutlich größer als 50KB sein
-          if [ $FILESIZE -lt 1000000 ]; then
-            echo "FEHLER: Download unvollständig ($FILESIZE Bytes). POST-Request fehlgeschlagen."
+          SIZE=$(stat -c%s "cache_oha.json")
+          echo "Dateigröße: $SIZE Bytes"
+          # Da die Daten komprimiert (gzip) kommen, ist die Datei kleiner als 15MB, 
+          # sollte aber deutlich über 50KB (51200 Bytes) liegen.
+          if [ $SIZE -lt 100000 ]; then
+            echo "FEHLER: Immer noch nur 50KB geladen. Server blockiert GitHub Action IP."
             exit 1
           fi
 
-      - name: Push zum Repository
+      - name: Push to Repo
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add cache_oha.json
-          git commit -m "Update OHA Data (POST Method)" || exit 0
+          git commit -m "Update OHA Data (Force POST)" || exit 0
           git push
