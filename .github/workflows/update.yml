@@ -2,8 +2,8 @@ name: OHA Browser Force Update
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch: 
+    - cron: '0 */6 * * *' # Alle 6 Stunden automatisch
+  workflow_dispatch: # Button für manuellen Start
 
 jobs:
   download_oha:
@@ -17,32 +17,38 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install Playwright
+      - name: Install Playwright Browser
         run: |
           npm install playwright
           npx playwright install chromium --with-deps
 
-      - name: Download JSON via Browser Simulation
+      - name: Download JSON via Playwright
         run: |
           node -e "
           const { chromium } = require('playwright');
+          const fs = require('fs');
           (async () => {
             const browser = await chromium.launch();
             const page = await browser.newPage();
-            
             console.log('Navigiere zu OHA...');
+            
+            // Der Browser wartet, bis die gesamte Datei im Netzwerk geladen ist
             const response = await page.goto('http://oha.to/mediaurl-catalog.json', { 
               waitUntil: 'networkidle', 
-              timeout: 120000 
+              timeout: 180000 
             });
             
             const buffer = await response.body();
-            const fs = require('fs');
             fs.writeFileSync('cache_oha.json', buffer);
             
-            console.log('Download beendet. Größe: ' + buffer.length + ' Bytes');
+            console.log('Download beendet. Dateigröße: ' + buffer.length + ' Bytes');
             await browser.close();
-            if (buffer.length < 1000000) process.exit(1);
+            
+            // Sicherheitscheck: Wenn kleiner 1MB, Fehlermeldung
+            if (buffer.length < 1000000) {
+              console.error('FEHLER: Nur Bruchstück geladen!');
+              process.exit(1);
+            }
           })();
           "
 
