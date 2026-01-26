@@ -1,20 +1,58 @@
-name: Update OHA Data
+name: OHA Full Force Update
+
 on:
-  workflow_dispatch: # Erlaubt den manuellen Start via Button
   schedule:
-    - cron: '0 */6 * * *' # Automatisches Update alle 6 Stunden
+    - cron: '0 */6 * * *'
+  workflow_dispatch: 
 
 jobs:
-  update:
+  download_oha:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Download
-        run: curl -L "http://oha.to/mediaurl-catalog.json" -o cache_oha.json
-      - name: Commit
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Download OHA with Force
         run: |
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
+          echo "Starte Force-Download mit wget..."
+          URL="http://oha.to/mediaurl-catalog.json"
+          
+          # wget Optionen erklärt:
+          # --tries=20: Versucht es 20 Mal bei Abbruch
+          # --waitretry=10: Wartet 10 Sek zwischen Versuchen
+          # --retry-connrefused: Versucht es auch bei verweigerten Verbindungen
+          # --read-timeout=900: Wartet bis zu 15 Min auf Datenfluss
+          # --user-agent: Tarnt GitHub als echten Web-Browser
+          
+          wget --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+               --timeout=900 \
+               --tries=20 \
+               --waitretry=10 \
+               --retry-connrefused \
+               "$URL" -O cache_oha.json
+
+      - name: Validierung (Muss > 5MB sein)
+        run: |
+          FILESIZE=$(stat -c%s "cache_oha.json")
+          echo "Dateigröße geladen: $FILESIZE Bytes"
+          
+          if [ $FILESIZE -lt 5000000 ]; then
+            echo "FEHLER: Wieder nur Bruchstück geladen ($FILESIZE Bytes). Breche ab!"
+            exit 1
+          fi
+          
+          # Prüfen ob JSON Ende korrekt ist (schließende Klammer)
+          if tail -c 10 cache_oha.json | grep -q "}"; then
+             echo "JSON scheint vollständig zu sein."
+          else
+             echo "FEHLER: JSON endet nicht mit }. Datei ist korrupt."
+             exit 1
+          fi
+
+      - name: Push zum Repository
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
           git add cache_oha.json
-          git commit -m "Update OHA" || exit 0
+          git commit -m "Update OHA Data (Force Wget Method)" || exit 0
           git push
