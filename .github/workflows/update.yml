@@ -1,4 +1,4 @@
-name: OHA Complete Download
+name: OHA Direct Download
 
 on:
   schedule:
@@ -12,157 +12,62 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Download OHA Data (Handle Chunked Response)
+      - name: Download OHA Data with curl
         run: |
-          python3 << 'PYEOF'
-import requests
-import json
-import time
-
-def download_with_chunks():
-    url = 'http://oha.to/mediaurl-catalog.json'
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive'
-    }
-    
-    print("Starte Download mit Chunk-Unterstützung...")
-    
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=300,
-            stream=True
-        )
-        
-        response.raise_for_status()
-        
-        print(f"Status: {response.status_code}")
-        print(f"Headers: {dict(response.headers)}")
-        
-        chunks = []
-        total_size = 0
-        chunk_count = 0
-        
-        for chunk in response.iter_content(chunk_size=8192, decode_unicode=False):
-            if chunk:
-                chunks.append(chunk)
-                total_size += len(chunk)
-                chunk_count += 1
-                
-                if chunk_count % 100 == 0:
-                    print(f"Chunk {chunk_count}: {total_size} Bytes geladen...")
-        
-        print(f"\nGesamt: {chunk_count} Chunks, {total_size} Bytes")
-        
-        content = b''.join(chunks).decode('utf-8')
-        
-        print(f"Dekodierte Größe: {len(content)} Zeichen")
-        
-        if len(content) < 100000:
-            print(f"FEHLER: Inhalt zu klein ({len(content)} Zeichen)")
-            print("Erste 500 Zeichen:")
-            print(content[:500])
-            return False
-        
-        data = json.loads(content)
-        items_count = len(data.get('items', []))
-        
-        print(f"JSON geparst: {items_count} Items")
-        
-        if items_count < 100:
-            print(f"WARNUNG: Nur {items_count} Items gefunden")
-        
-        with open('cache_oha.json', 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=None)
-        
-        print(f"✓ Erfolgreich gespeichert!")
-        return True
-        
-    except requests.exceptions.Timeout:
-        print("FEHLER: Timeout")
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"FEHLER: Request fehlgeschlagen - {e}")
-        return False
-    except json.JSONDecodeError as e:
-        print(f"FEHLER: JSON Parse Error - {e}")
-        return False
-    except Exception as e:
-        print(f"FEHLER: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-max_retries = 3
-for attempt in range(max_retries):
-    print(f"\n=== Versuch {attempt + 1}/{max_retries} ===")
-    
-    if download_with_chunks():
-        print("\n✓ Download erfolgreich abgeschlossen")
-        exit(0)
-    
-    if attempt < max_retries - 1:
-        wait_time = (attempt + 1) * 10
-        print(f"Warte {wait_time} Sekunden vor erneutem Versuch...")
-        time.sleep(wait_time)
-
-print("\n✗ Alle Versuche fehlgeschlagen")
-exit(1)
-PYEOF
-
-      - name: Validiere Download
-        run: |
-          if [ ! -f cache_oha.json ]; then
-            echo "FEHLER: Datei nicht gefunden"
+          echo "Starte Download..."
+          
+          curl -v -L \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -H "Accept: application/json, text/plain, */*" \
+            -H "Accept-Encoding: gzip, deflate" \
+            --compressed \
+            --max-time 300 \
+            --retry 5 \
+            --retry-delay 10 \
+            --retry-max-time 600 \
+            -o cache_oha.json \
+            "http://oha.to/mediaurl-catalog.json"
+          
+          SIZE=$(wc -c < cache_oha.json | tr -d ' ')
+          echo "Download-Größe: $SIZE Bytes"
+          
+          if [ $SIZE -lt 1000000 ]; then
+            echo "FEHLER: Datei zu klein ($SIZE Bytes)"
+            echo "Inhalt:"
+            head -n 50 cache_oha.json
             exit 1
           fi
           
-          SIZE=$(wc -c < cache_oha.json)
-          echo "Dateigröße: $SIZE Bytes"
-          
-          if [ $SIZE -lt 100000 ]; then
-            echo "FEHLER: Datei zu klein"
-            head -n 20 cache_oha.json
-            exit 1
-          fi
+          echo "✓ Download erfolgreich ($SIZE Bytes)"
+
+      - name: Validiere JSON
+        run: |
+          echo "Validiere JSON..."
           
           if ! python3 -m json.tool cache_oha.json > /dev/null 2>&1; then
             echo "FEHLER: Ungültiges JSON"
+            echo "Erste 1000 Zeichen:"
+            head -c 1000 cache_oha.json
             exit 1
           fi
           
-          ITEMS=$(python3 -c "import json; print(len(json.load(open('cache_oha.json')).get('items', [])))")
-          GROUPS=$(python3 -c "import json; data=json.load(open('cache_oha.json')); print(len([f for f in data.get('features',{}).get('filter',[]) if f.get('id')=='group'][0].get('values',[])))")
-          
-          echo "✓ Validierung erfolgreich"
-          echo "  - Items: $ITEMS"
-          echo "  - Gruppen: $GROUPS"
+          ITEMS=$(python3 -c "import json; data=json.load(open('cache_oha.json')); print(len(data.get('items', [])))")
+          echo "✓ JSON gültig - $ITEMS Items gefunden"
           
           if [ "$ITEMS" -lt 100 ]; then
             echo "WARNUNG: Weniger als 100 Items"
-            exit 1
           fi
 
       - name: Push zum Repository
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
           if [ -f cache_oha.json ]; then
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
             git add cache_oha.json
-            
-            if git diff --staged --quiet; then
-              echo "Keine Änderungen"
-            else
-              SIZE=$(wc -c < cache_oha.json)
-              ITEMS=$(python3 -c "import json; print(len(json.load(open('cache_oha.json')).get('items', [])))")
-              git commit -m "Update OHA Data: $ITEMS items, $SIZE bytes ($(date '+%Y-%m-%d %H:%M UTC'))"
-              git push
-              echo "✓ Erfolgreich gepusht"
-            fi
+            git diff --staged --quiet || git commit -m "Update OHA Data - $(date '+%Y-%m-%d %H:%M UTC')"
+            git push
+            echo "✓ Erfolgreich gepusht"
+          else
+            echo "FEHLER: cache_oha.json nicht gefunden"
+            exit 1
           fi
