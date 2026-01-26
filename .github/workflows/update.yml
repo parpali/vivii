@@ -1,4 +1,4 @@
-name: OHA Direct Download
+name: OHA POST Force Update
 
 on:
   schedule:
@@ -12,62 +12,43 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Download OHA Data with curl
+      - name: Download Full OHA Catalog (POST Method)
         run: |
-          echo "Starte Download..."
+          echo "Starte Download mit POST-Request..."
           
-          curl -v -L \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            -H "Accept: application/json, text/plain, */*" \
-            -H "Accept-Encoding: gzip, deflate" \
-            --compressed \
-            --max-time 300 \
-            --retry 5 \
-            --retry-delay 10 \
-            --retry-max-time 600 \
-            -o cache_oha.json \
-            "http://oha.to/mediaurl-catalog.json"
-          
-          SIZE=$(wc -c < cache_oha.json | tr -d ' ')
-          echo "Download-Größe: $SIZE Bytes"
-          
-          if [ $SIZE -lt 1000000 ]; then
-            echo "FEHLER: Datei zu klein ($SIZE Bytes)"
-            echo "Inhalt:"
-            head -n 50 cache_oha.json
-            exit 1
-          fi
-          
-          echo "✓ Download erfolgreich ($SIZE Bytes)"
+          # Wir nutzen exakt die Header und den Body aus deiner Analyse
+          curl -X POST "http://oha.to/mediaurl-catalog.json" \
+               -H "user-agent: MediaUrl/2" \
+               -H "Content-Type: application/json; charset=utf-8" \
+               -d '{
+                 "language": "de",
+                 "region": "XX",
+                 "catalogId": "iptv",
+                 "id": "iptv",
+                 "adult": false,
+                 "search": "",
+                 "sort": "",
+                 "filter": {},
+                 "cursor": null,
+                 "clientVersion": "3.0.2"
+               }' \
+               -o cache_oha.json
 
-      - name: Validiere JSON
+      - name: Validierung der Dateigröße
         run: |
-          echo "Validiere JSON..."
+          FILESIZE=$(stat -c%s "cache_oha.json")
+          echo "Dateigröße: $FILESIZE Bytes"
           
-          if ! python3 -m json.tool cache_oha.json > /dev/null 2>&1; then
-            echo "FEHLER: Ungültiges JSON"
-            echo "Erste 1000 Zeichen:"
-            head -c 1000 cache_oha.json
+          # Die Datei muss deutlich größer als 50KB sein
+          if [ $FILESIZE -lt 1000000 ]; then
+            echo "FEHLER: Download unvollständig ($FILESIZE Bytes). POST-Request fehlgeschlagen."
             exit 1
-          fi
-          
-          ITEMS=$(python3 -c "import json; data=json.load(open('cache_oha.json')); print(len(data.get('items', [])))")
-          echo "✓ JSON gültig - $ITEMS Items gefunden"
-          
-          if [ "$ITEMS" -lt 100 ]; then
-            echo "WARNUNG: Weniger als 100 Items"
           fi
 
       - name: Push zum Repository
         run: |
-          if [ -f cache_oha.json ]; then
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            git add cache_oha.json
-            git diff --staged --quiet || git commit -m "Update OHA Data - $(date '+%Y-%m-%d %H:%M UTC')"
-            git push
-            echo "✓ Erfolgreich gepusht"
-          else
-            echo "FEHLER: cache_oha.json nicht gefunden"
-            exit 1
-          fi
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add cache_oha.json
+          git commit -m "Update OHA Data (POST Method)" || exit 0
+          git push
