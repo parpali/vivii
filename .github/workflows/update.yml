@@ -1,4 +1,4 @@
-name: OHA Full Force Update
+name: OHA Browser Force Update
 
 on:
   schedule:
@@ -12,47 +12,44 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Download OHA with Force
-        run: |
-          echo "Starte Force-Download mit wget..."
-          URL="http://oha.to/mediaurl-catalog.json"
-          
-          # wget Optionen erklärt:
-          # --tries=20: Versucht es 20 Mal bei Abbruch
-          # --waitretry=10: Wartet 10 Sek zwischen Versuchen
-          # --retry-connrefused: Versucht es auch bei verweigerten Verbindungen
-          # --read-timeout=900: Wartet bis zu 15 Min auf Datenfluss
-          # --user-agent: Tarnt GitHub als echten Web-Browser
-          
-          wget --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-               --timeout=900 \
-               --tries=20 \
-               --waitretry=10 \
-               --retry-connrefused \
-               "$URL" -O cache_oha.json
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-      - name: Validierung (Muss > 5MB sein)
+      - name: Install Playwright
         run: |
-          FILESIZE=$(stat -c%s "cache_oha.json")
-          echo "Dateigröße geladen: $FILESIZE Bytes"
-          
-          if [ $FILESIZE -lt 5000000 ]; then
-            echo "FEHLER: Wieder nur Bruchstück geladen ($FILESIZE Bytes). Breche ab!"
-            exit 1
-          fi
-          
-          # Prüfen ob JSON Ende korrekt ist (schließende Klammer)
-          if tail -c 10 cache_oha.json | grep -q "}"; then
-             echo "JSON scheint vollständig zu sein."
-          else
-             echo "FEHLER: JSON endet nicht mit }. Datei ist korrupt."
-             exit 1
-          fi
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Download JSON via Browser Simulation
+        run: |
+          node -e "
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            
+            console.log('Navigiere zu OHA...');
+            const response = await page.goto('http://oha.to/mediaurl-catalog.json', { 
+              waitUntil: 'networkidle', 
+              timeout: 120000 
+            });
+            
+            const buffer = await response.body();
+            const fs = require('fs');
+            fs.writeFileSync('cache_oha.json', buffer);
+            
+            console.log('Download beendet. Größe: ' + buffer.length + ' Bytes');
+            await browser.close();
+            if (buffer.length < 1000000) process.exit(1);
+          })();
+          "
 
       - name: Push zum Repository
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add cache_oha.json
-          git commit -m "Update OHA Data (Force Wget Method)" || exit 0
+          git commit -m "Update OHA Data (Browser Method)" || exit 0
           git push
