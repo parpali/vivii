@@ -1,24 +1,20 @@
 name: Update OHA Data
 on:
+  workflow_dispatch: # Erlaubt den manuellen Start via Button
   schedule:
-    - cron: '0 */6 * * *' # Alle 6 Stunden
-  workflow_dispatch: # Erlaubt manuelles Starten
+    - cron: '0 */6 * * *' # Automatisches Update alle 6 Stunden
 
 jobs:
-  build:
-    runs-as-ubuntu-latest
+  update:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-
-      - name: Download OHA Data
+      - uses: actions/checkout@v3
+      - name: Download
+        run: curl -L "http://oha.to/mediaurl-catalog.json" -o cache_oha.json
+      - name: Commit
         run: |
-          curl -L "https://oha.to/mediaurl-catalog.json" -o mediaurl-catalog.json
-
-      - name: Commit and Push
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add mediaurl-catalog.json
-          git commit -m "Update OHA data" || exit 0
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add cache_oha.json
+          git commit -m "Update OHA" || exit 0
           git push
