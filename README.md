@@ -1,18 +1,7 @@
-### 🛠 Automatisiertes Update Script (GitHub Action)
+## 🛠 Manuelle Daten-Aktualisierung
 
-Dieses Script wird in der Datei `.github/workflows/update.yml` verwendet, um die Daten stabil von OHA zu beziehen:
+Klicke auf den Button unten, um den Download von OHA manuell zu starten:
 
-```bash
-# 1. Verzeichnis für Cache sicherstellen
-mkdir -p data
+[![Manuelles Update starten](https://img.shields.io/badge/OHA--Update-Starten-blue?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/mr-evil1/VAVOO/actions/workflows/update.yml)
 
-# 2. Download mit Retry-Logik (verhindert 55kb-Bruchstücke)
-curl --retry 5 \
-     --retry-delay 5 \
-     --location \
-     --user-agent "VAVOO/2.6" \
-     "[http://oha.to/mediaurl-catalog.json](http://oha.to/mediaurl-catalog.json)" \
-     -o data/cache_oha.json
-
-# 3. Validierung (optional: bricht ab, wenn Datei zu klein)
-[ $(stat -c%s "data/cache_oha.json") -gt 1000000 ] || exit 1
+*(Nach dem Klick oben rechts auf "Run workflow" drücken)*
