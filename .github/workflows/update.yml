@@ -1,37 +1,45 @@
-name: Vavoo M3U & JSON Export
+name: Vavoo Germany Update
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Ermöglicht manuelles Starten
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 6 * * *' # Läuft jeden Morgen um 6 Uhr
 
 jobs:
-  run-export:
+  update_playlist:
     runs-on: ubuntu-latest
-    # Berechtigungen explizit für den Push setzen
+    # WICHTIG: Diese Berechtigung erlaubt das Schreiben ins Repository
     permissions:
       contents: write
 
     steps:
-      - name: Code auschecken
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Python einrichten
+      - name: Python Setup
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Abhängigkeiten installieren
+      - name: Install Requests
         run: pip install requests
 
-      - name: Export ausführen
+      - name: Run Export Script
         run: python export_script.py
 
-      - name: Änderungen pushen
+      - name: Commit and Push Changes
         run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-          # Alle erstellten Dateien (m3u und json) hinzufügen
-          git add vavoo_channels.m3u vavoo_full_export.json
-          git commit -m "Update Playlist & Data: $(date +'%d-%m-%Y %H:%M')" || echo "Keine Änderungen gefunden"
-          git push
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Sicherstellen, dass die Dateien im Verzeichnis sind
+          ls -la 
+          
+          # Alle neuen Dateien hinzufügen (M3U und JSON)
+          git add --all
+          
+          # Nur committen, wenn sich etwas geändert hat
+          git commit -m "Automatisches Update der Senderliste: $(date +'%d.%m.%Y')" || echo "Keine Änderungen gefunden"
+          
+          # Explizit zum main branch pushen
+          git push origin main
