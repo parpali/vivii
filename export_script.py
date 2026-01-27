@@ -1,15 +1,10 @@
 import requests
 import json
 import time
-import os
 
 # Konfiguration
-M3U_PATH = "vavoo_channels.m3u"
-JSON_PATH = "vavoo_full_export.json"
-HEADERS = {
-    'User-Agent': 'MediaHubMX/2',
-    'Accept': 'application/json'
-}
+M3U_FILE = "vavoo_channels.m3u"
+JSON_FILE = "vavoo_full_export.json"
 
 def resolve_vavoo_link(session, link):
     url = "https://vavoo.to/vto-cluster/mediahubmx-resolve.json"
@@ -22,63 +17,57 @@ def resolve_vavoo_link(session, link):
 
 def main():
     session = requests.Session()
-    session.headers.update(HEADERS)
+    session.headers.update({'User-Agent': 'MediaHubMX/2'})
     
-    print("Rufe Gruppen ab...")
+    print("Hole Ländergruppen...")
     try:
-        groups_res = session.get("https://www2.vavoo.to/live2/index", params={"output": "json"}, timeout=10)
-        countries = sorted(list(set([c.get("group") for c in groups_res.json() if c.get("group")])))
+        groups = session.get("https://www2.vavoo.to/live2/index?output=json", timeout=10).json()
+        countries = sorted(list(set([c.get("group") for c in groups if c.get("group")])))
     except Exception as e:
-        print(f"Fehler beim Gruppenabruf: {e}")
+        print(f"Fehler beim Laden der Gruppen: {e}")
         return
 
-    m3u_content = "#EXTM3U\n"
-    full_dump = {}
+    m3u_lines = ["#EXTM3U"]
+    full_data = {}
 
     for country in countries:
-        print(f"Verarbeite Land: {country}")
-        cursor = 0
-        country_channels = []
+        print(f"Verarbeite: {country}")
+        payload = {"language":"de","region":"AT","catalogId":"vto-iptv","filter":{"group":country},"cursor":0,"clientVersion":"3.0.2"}
         
-        while True:
-            payload = {
-                "language": "de", "region": "AT", "catalogId": "vto-iptv",
-                "filter": {"group": country}, "cursor": cursor, "clientVersion": "3.0.2"
-            }
-            try:
-                res = session.post("https://vavoo.to/vto-cluster/mediahubmx-catalog.json", json=payload, timeout=15)
-                data = res.json()
-                items = data.get("items", [])
-                country_channels.extend(items)
-                cursor = data.get("nextCursor")
-                if not cursor: break
-            except: break
-        
-        for item in country_channels:
-            name = item.get("name", "Unknown")
-            # Link auflösen
-            resolved_url = resolve_vavoo_link(session, item.get("url"))
-            
-            if resolved_url:
-                # M3U Eintrag hinzufügen
-                # tvg-name und group-title helfen IPTV-Playern bei der Sortierung
-                m3u_content += f'#EXTINF:-1 tvg-name="{name}" group-title="{country}",{name}\n'
-                m3u_content += f'{resolved_url}\n'
+        try:
+            r = session.post("https://vavoo.to/vto-cluster/mediahubmx-catalog.json", json=payload, timeout=15).json()
+            items = r.get("items", [])
+            country_channels = []
+
+            for item in items:
+                name = item.get("name")
+                vavoo_url = item.get("url")
                 
-                # Für JSON speichern
-                item["resolved_url"] = resolved_url
-                time.sleep(0.05) # Kurze Pause
+                # Link auflösen
+                resolved = resolve_vavoo_link(session, vavoo_url)
+                if resolved:
+                    # M3U Eintrag
+                    m3u_lines.append(f'#EXTINF:-1 group-title="{country}",{name}')
+                    m3u_lines.append(resolved)
+                    
+                    # JSON Daten
+                    item["resolved_url"] = resolved
+                    country_channels.append(item)
+                    
+                time.sleep(0.05) # Rate limiting Schutz
+            
+            full_data[country] = country_channels
+        except:
+            continue
 
-        full_dump[country] = country_channels
-
-    # Speichern der Dateien
-    with open(M3U_PATH, 'w', encoding='utf-8') as f:
-        f.write(m3u_content)
+    # Dateien schreiben
+    with open(M3U_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(m3u_lines))
     
-    with open(JSON_PATH, 'w', encoding='utf-8') as f:
-        json.dump(full_dump, f, ensure_ascii=False, indent=4)
-        
-    print(f"Export beendet. M3U gespeichert unter {M3U_PATH}")
+    with open(JSON_FILE, "w", encoding="utf-8") as f:
+        json.dump(full_data, f, ensure_ascii=False, indent=4)
+    
+    print("Dateien erfolgreich lokal erstellt.")
 
 if __name__ == "__main__":
     main()
