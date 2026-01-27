@@ -1,33 +1,37 @@
-name: Vavoo Full Export
+name: Vavoo M3U & JSON Export
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # Läuft täglich um Mitternacht
-  workflow_dispatch: # Erlaubt manuelles Starten über den "Actions" Tab
+    - cron: '0 0 * * *'
 
 jobs:
-  build:
+  run-export:
     runs-on: ubuntu-latest
+    # Berechtigungen explizit für den Push setzen
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Code auschecken
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Python einrichten
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Abhängigkeiten installieren
         run: pip install requests
 
-      - name: Run Export Script
+      - name: Export ausführen
         run: python export_script.py
 
-      - name: Commit and Push
+      - name: Änderungen pushen
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add vavoo_full_export.json
-          git commit -m "Update Vavoo Export $(date)" || echo "No changes to commit"
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          # Alle erstellten Dateien (m3u und json) hinzufügen
+          git add vavoo_channels.m3u vavoo_full_export.json
+          git commit -m "Update Playlist & Data: $(date +'%d-%m-%Y %H:%M')" || echo "Keine Änderungen gefunden"
           git push
