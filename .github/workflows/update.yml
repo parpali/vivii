@@ -1,0 +1,33 @@
+name: Vavoo Full Export
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Läuft täglich um Mitternacht
+  workflow_dispatch: # Erlaubt manuelles Starten über den "Actions" Tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Run Export Script
+        run: python export_script.py
+
+      - name: Commit and Push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add vavoo_full_export.json
+          git commit -m "Update Vavoo Export $(date)" || echo "No changes to commit"
+          git push
